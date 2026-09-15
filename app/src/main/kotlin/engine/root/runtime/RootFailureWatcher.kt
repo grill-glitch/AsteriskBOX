@@ -3,6 +3,7 @@
 
 package engine.root.runtime
 
+import android.content.Context
 import engine.root.publication.RootRuntimeLayout
 import features.logs.AndroidAppLogger
 import kotlinx.coroutines.CoroutineScope
@@ -12,8 +13,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import system.RootShellGateway
-import system.ShellExecOptions
-import utils.shellQuote
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -40,12 +39,12 @@ internal object RootFailureWatcher {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val started = AtomicBoolean(false)
 
-    fun ensureStarted(shell: RootShellGateway, layout: RootRuntimeLayout) {
+    fun ensureStarted(context: Context, shell: RootShellGateway, layout: RootRuntimeLayout) {
         if (!started.compareAndSet(false, true)) return
-        scope.launch { watch(shell, layout) }
+        scope.launch { watch(context.applicationContext, shell, layout) }
     }
 
-    private suspend fun watch(shell: RootShellGateway, layout: RootRuntimeLayout) {
+    private suspend fun watch(context: Context, shell: RootShellGateway, layout: RootRuntimeLayout) {
         val statePath = layout.asteriskdStatePath
         val stateFile = File(statePath)
         val errorLogPath = layout.logDirectoryPath + "/error.log"
@@ -66,13 +65,18 @@ internal object RootFailureWatcher {
                     mtime != baselineMtime && mtime != publishedMtime
                 ) {
                     publishedMtime = mtime
+                    val occurredAt = System.currentTimeMillis()
+                    val report = RootFailureReport.build(context, shell, layout, occurredAt)
                     val explanation = RootEbpfFailureAnalyzer.analyze(
                         errorCode = errorCode,
                         exitCode = state.exitCode,
                         message = state.errorMessage,
                         mode = state.mode,
                         extraContext = readLastFatalLine(shell, errorLogPath),
-                        occurredAtEpochMillis = System.currentTimeMillis(),
+                        occurredAtEpochMillis = occurredAt,
+                    ).copy(
+                        deviceInfo = report.deviceInfo,
+                        serviceLog = report.serviceLog,
                     )
                     runCatching {
                         AndroidAppLogger.warn(
@@ -95,7 +99,7 @@ internal object RootFailureWatcher {
     )
 
     private suspend fun readState(shell: RootShellGateway, path: String): SupervisorState? {
-        val text = readFileText(shell, path) ?: return null
+        val text = RootFailureReport.readText(shell, path) ?: return null
         return runCatching {
             val failure = JSONObject(text).optJSONObject("failure")
             val code = failure?.optString("code")?.takeIf { it.isNotEmpty() } ?: return null
@@ -115,27 +119,11 @@ internal object RootFailureWatcher {
      * core to its own error log.
      */
     private suspend fun readLastFatalLine(shell: RootShellGateway, path: String): String? {
-        val text = readFileText(shell, path) ?: return null
+        val text = RootFailureReport.readText(shell, path) ?: return null
         return text.lineSequence()
             .map(String::trim)
             .filter { it.startsWith(FatalPrefix) }
             .lastOrNull()
-    }
-
-    /**
-     * The supervisor writes its files as root, so they are not directly readable by the app
-     * uid; read them through the ROOT shell gateway. A direct read is attempted as a fallback
-     * for setups where the file is app-readable.
-     */
-    private suspend fun readFileText(shell: RootShellGateway, path: String): String? {
-        val viaShell = runCatching {
-            val result = shell.exec("cat ${path.shellQuote()}", ShellExecOptions(logFailure = false))
-            if (result.errno == 0 && result.stdout.isNotBlank()) result.stdout else null
-        }.getOrNull()
-        if (viaShell != null) return viaShell
-        return runCatching {
-            File(path).takeIf { it.isFile && it.canRead() }?.readText()
-        }.getOrNull()
     }
 
     private const val NOT_CAPTURED = Long.MIN_VALUE

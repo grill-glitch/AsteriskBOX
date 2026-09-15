@@ -1326,6 +1326,8 @@
     <string name="proxy_error_dialog_mode_title">Mode: %1$s</string>
     <string name="proxy_error_dialog_occurred_at">Time: %1$s</string>
     <string name="proxy_error_dialog_details">Error details</string>
+    <string name="proxy_error_dialog_device_info">Device &amp; system</string>
+    <string name="proxy_error_dialog_service_log">Start log</string>
     <string name="proxy_error_dialog_diagnostics">Suggested actions</string>
     <string name="proxy_error_dialog_copy">Copy log</string>
     <string name="proxy_error_dialog_copied">Copied to clipboard</string>

@@ -23,8 +23,14 @@ internal data class ProxyErrorExplanation(
     val occurredAtEpochMillis: Long,
     val rawMessage: String,
     @StringRes val diagnostics: List<Int>,
+    /** Device/system summary produced by [RootFailureReport]; empty when unavailable. */
+    val deviceInfo: String = "",
+    /** Logs written by the failed start attempt; empty when unavailable. */
+    val serviceLog: String = "",
 ) {
     val hasDiagnostics: Boolean get() = diagnostics.isNotEmpty()
+    val hasDeviceInfo: Boolean get() = deviceInfo.isNotBlank()
+    val hasServiceLog: Boolean get() = serviceLog.isNotBlank()
 }
 
 /**
