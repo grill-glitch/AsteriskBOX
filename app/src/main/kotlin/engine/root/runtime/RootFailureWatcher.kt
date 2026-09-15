@@ -130,21 +130,28 @@ internal object RootFailureWatcher {
 
     private data class SupervisorState(
         val mode: String,
-        val errorCode: String,
+        val errorCode: String?,
         val exitCode: Int?,
         val errorMessage: String?,
     )
 
+    /**
+     * Parse the persisted supervisor state. The failure is optional: a healthy or in-progress
+     * state parses too, and reporting it as [SupervisorState.errorCode] `null` is what lets the
+     * watcher close a failure episode. Returning `null` for the whole state instead — as an
+     * earlier version did when `failure.code` was absent — made that reset unreachable, so a
+     * later attempt repeating the previous failure code produced no dialog at all.
+     */
     private suspend fun readState(shell: RootShellGateway, path: String): SupervisorState? {
         val text = RootFailureReport.readText(shell, path) ?: return null
         return runCatching {
-            val failure = JSONObject(text).optJSONObject("failure")
-            val code = failure?.optString("code")?.takeIf { it.isNotEmpty() } ?: return null
+            val state = JSONObject(text)
+            val failure = state.optJSONObject("failure")
             SupervisorState(
-                mode = JSONObject(text).optString("mode"),
-                errorCode = code,
-                exitCode = failure.optInt("exitCode", -1).takeIf { it >= 0 },
-                errorMessage = failure.optString("message").takeIf { it.isNotEmpty() },
+                mode = state.optString("mode"),
+                errorCode = failure?.optString("code")?.takeIf { it.isNotEmpty() },
+                exitCode = failure?.optInt("exitCode", -1)?.takeIf { it >= 0 },
+                errorMessage = failure?.optString("message")?.takeIf { it.isNotEmpty() },
             )
         }.getOrNull()
     }

@@ -51,7 +51,11 @@ internal data class RootFailureReport(
             occurredAtEpochMillis: Long,
         ): RootFailureReport = RootFailureReport(
             deviceInfo = buildDeviceInfo(context, shell),
-            serviceLog = buildServiceLog(shell, layout, occurredAtEpochMillis),
+            // Paths in the service log are redacted before the text can reach the dialog or the
+            // clipboard: this report is meant to be pasted into a public issue.
+            serviceLog = DiagnosticRedaction.redact(
+                buildServiceLog(shell, layout, occurredAtEpochMillis),
+            ),
         )
 
         // --- device / system ---------------------------------------------------------
@@ -139,27 +143,31 @@ internal data class RootFailureReport(
             layout: RootRuntimeLayout,
             occurredAtEpochMillis: Long,
         ): String {
-            val sections = mutableListOf<String>()
+            // error.log and asteriskd.log describe the attempt that just failed and are cleared on
+            // every start, so they are the most valuable part of the report. They are collected
+            // first and never truncated away; the cumulative app log fills whatever budget is
+            // left, and only its newest lines survive because those sit nearest the failure.
+            val attemptLogs = buildList {
+                readText(shell, "${layout.logDirectoryPath}/error.log")
+                    ?.let { add(it.capLines(PerFileLineCap)) }
+                readText(shell, "${layout.logDirectoryPath}/asteriskd.log")
+                    ?.let { add(it.capLines(PerFileLineCap)) }
+            }.filter { it.isNotBlank() }.joinToString("\n")
 
-            readText(shell, "${layout.logDirectoryPath}/error.log")
-                ?.let { sections += it.capLines(PerFileLineCap) }
-            readText(shell, "${layout.logDirectoryPath}/asteriskd.log")
-                ?.let { sections += it.capLines(PerFileLineCap) }
-            readText(shell, "${layout.logDirectoryPath}/logcat.log", tailLines = LogcatTailLines)
-                ?.let { raw ->
-                    raw.lineSequence()
-                        .filter { it.isNotBlank() }
-                        .filter { line -> isWithinWindow(line, occurredAtEpochMillis) }
-                        .map { decodeAppLogLine(it) }
-                        .joinToString("\n")
-                        .takeIf { it.isNotBlank() }
-                        ?.let { sections += it }
-                }
+            val appLogBudget = (ServiceLogCharCap - attemptLogs.length).coerceAtLeast(0)
+            val appLog = readText(shell, "${layout.logDirectoryPath}/logcat.log", tailLines = LogcatTailLines)
+                ?.lineSequence()
+                ?.filter { it.isNotBlank() }
+                ?.filter { line -> isWithinWindow(line, occurredAtEpochMillis) }
+                ?.map { decodeAppLogLine(it) }
+                ?.joinToString("\n")
+                ?.takeLast(appLogBudget)
+                ?.takeIf { it.isNotBlank() }
+                .orEmpty()
 
-            return sections
+            return listOf(attemptLogs, appLog)
                 .filter { it.isNotBlank() }
                 .joinToString("\n")
-                .let { if (it.length > ServiceLogCharCap) it.takeLast(ServiceLogCharCap) else it }
         }
 
         /**

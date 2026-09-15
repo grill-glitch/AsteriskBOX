@@ -148,6 +148,9 @@ internal class RootModeEngine(
         if (!rootAccess.hasRootAccess()) error(context.getString(definition.rootRequiredErrorResId))
         val config = definition.buildConfig(context.prepareRootConfigBuildContext(request))
         require(config.asteriskdConfig.mode == definition.daemonMode)
+        // Reconfiguring can start a Service attempt of its own, so it counts as a new attempt:
+        // without this a failure repeating the previous code would be suppressed.
+        RootFailureWatcher.beginAttempt()
         val wasRunning = controller.reconfigureServiceControl(config.root, config.asteriskdConfig)
         if (wasRunning) {
             config.localProxyOptions?.let(LocalProxyRuntime::update) ?: LocalProxyRuntime.clear()
