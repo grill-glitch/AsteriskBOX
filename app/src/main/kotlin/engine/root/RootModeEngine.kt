@@ -20,6 +20,7 @@ import engine.root.publication.rootRuntimeLayout
 import engine.root.runtime.ProxyErrorBus
 import engine.root.runtime.RootEbpfFailureAnalyzer
 import engine.root.runtime.RootFailureReport
+import engine.root.runtime.RootFailureWatcher
 import engine.root.runtime.RootRuntimeBusyException
 import engine.root.runtime.RootRuntimeConflictException
 import engine.root.runtime.RootSupervisorController
@@ -82,6 +83,9 @@ internal class RootModeEngine(
         val rootContext = context.prepareRootConfigBuildContext(request)
         val config = definition.buildConfig(rootContext)
         require(config.asteriskdConfig.mode == definition.daemonMode)
+        // A new attempt begins: a failure from it must be publishable even while the previous
+        // failure is still the newest record in the supervisor state file.
+        RootFailureWatcher.beginAttempt()
         return runCatching {
             val snapshot = if (explicitRestart) {
                 controller.restart(config.root, config.asteriskdConfig)

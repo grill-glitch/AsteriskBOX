@@ -50,7 +50,9 @@ internal fun ProxyErrorHost() {
     if (current != null) {
         ProxyErrorDialog(
             explanation = current,
-            onDismiss = { ProxyErrorBus.acknowledge() },
+            // Pass the explanation that is actually on screen: if a newer failure replaced it
+            // while this dialog was open, dismissing this one must not discard that failure.
+            onDismiss = { ProxyErrorBus.acknowledge(current) },
         )
     }
 }
