@@ -13,6 +13,10 @@ import app.ServiceControlKeyguard
 import app.ServiceControlSettings
 import app.ServiceControlWifi
 import app.ServiceControlWifiRule
+import features.home.DefaultHomeDashboardLayout
+import features.home.HomeDashboardLayout
+import features.home.HomeDashboardLayoutJson
+import features.home.sanitizeHomeDashboardLayout
 import features.settings.servicecontrol.normalizeServiceControlSettings
 import java.util.UUID
 
@@ -282,6 +286,7 @@ internal class AppSettingsPreferences(
                 KeyProxyAppListMode,
                 defaults.proxyAppListMode,
             ),
+            homeDashboard = preferences.getHomeDashboardLayout(defaults.homeDashboard),
         )
     }
 
@@ -394,6 +399,14 @@ internal class AppSettingsPreferences(
         return getString(key, null)?.let(StringMapJson::decode) ?: defaultValue
     }
 
+    private fun SharedPreferences.getHomeDashboardLayout(
+        defaultValue: HomeDashboardLayout,
+    ): HomeDashboardLayout {
+        val payload = getString(KeyHomeDashboardLayout, null) ?: return defaultValue
+        val decoded = HomeDashboardLayoutJson.decode(payload) ?: return defaultValue
+        return sanitizeHomeDashboardLayout(decoded, DefaultHomeDashboardLayout)
+    }
+
 }
 
 private const val PreferencesName = "asteriskbox_settings"
@@ -499,6 +512,7 @@ private const val LegacyKeyEbpfSharedNetworkInterfaces = "ebpf_shared_network_in
 internal const val KeyIgnoredInterfaces = "ignored_interfaces"
 internal const val KeyPrivateAddressCidrs = "private_address_cidrs"
 internal const val KeyProxyAppListMode = "proxy_app_list_mode"
+internal const val KeyHomeDashboardLayout = "home_dashboard_layout"
 
 private val SubscriptionHwidLock = Any()
 
